@@ -1,29 +1,45 @@
-:local dnsName
-# Use d for days or w for weeks at the end of variable value
+:local dnsName "demo.demodns.com"
+:local certId
+:local cert
 :local Daysbefore 30d 
+:local certDetail
+:local certExpiresAfter
+:local expired
 
-# Change the value of dnsName to your own
-:local dnsName demo.demodns.com
+# Try to find the certificate ID.
+:do {
+    :set certId [/certificate find common-name=$dnsName];
 
-:do { :local cert [/certificate get [find common-name=$dnsName]] } on-error={ :local cert "" }
+} on-error={
+    :set certId "";
+}
 
-:if ( [:len $cert] = 0 || [get $cert expires-after] <  $Daysbefore ||  [get $cert expired] )  do={
+# Check whether a certificate was found.
+:if ($certId) do={
+    :set cert [/certificate get $certId];
+    :set certExpiresAfter [/certificate get $certId value-name=expires-after];
+    :set expired [/certificate get $certId value-name=expired];
+} else {
+    :log info "No certificate with the common name '$dnsName' found.";
+}
+
+:if ( [:len $cert] = 0 || $certExpiresAfter  <  $Daysbefore ||  $expired )  do={
 
      # Get LetsEncrypt certificate #
      :if ( [/certificate enable-ssl-certificate dns-name=$dnsName] = 0 ) do={
           :log info "[Letsencrypt] - Certificate Updated"
      } else={
-          :log info "[Letsencrypt] - Trying to temporarily open firewall on port 80 and enable webservice"
+          :log info "[Letsencrypt] - Try to open port in firewall and enable service"
           :delay 5000ms;
           /ip firewall/filter/add chain=input dst-port=80 protocol=tcp action=accept place-before=0 comment="Letsencrypt"
           /ip service enable [find port=80]
           :if ( [/certificate enable-ssl-certificate dns-name=$dnsName] = 0 ) do={
               :log info "[Letsencrypt] - Certificate Updated - Close ports"
           } else={
-              :log error "[Letsencrypt] - Unable to generate certificate - Close ports"
+              :log error "[Letsencrypt] - Unable to generate certification - Close ports"
           }
      }
-     # Remove custom firewall rule and disable service on port 80
+     # Remove custom firewall roule and disable services #
      /ip firewall/filter/remove [find comment="Letsencrypt"]
      /ip service disable [find port=80];
 
@@ -31,6 +47,7 @@
         :log info "[Letsencrypt] - Nothing to do!"
 }
 
+# Update Hotspot server profiles 
 :foreach i in=[/ip hotspot profile find] do={
     :local profileName [/ip hotspot profile get $i name];
     :local loginByHTTPS [/ip hotspot profile get $i login-by];
